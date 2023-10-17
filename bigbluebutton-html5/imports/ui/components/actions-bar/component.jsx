@@ -89,11 +89,11 @@ class ActionsBar extends PureComponent {
               <JoinVideoOptionsContainer />
             )
             : null}
-          <ScreenshareButtonContainer {...{
+          {<ScreenshareButtonContainer {...{
             amIPresenter,
             isMeteorConnected,
           }}
-          />
+          />}
         </Styled.Center>
         <Styled.Right>
           { shouldShowOptionsButton ?

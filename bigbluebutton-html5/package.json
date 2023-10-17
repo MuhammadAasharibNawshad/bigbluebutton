@@ -42,6 +42,7 @@
     "browser-bunyan": "^1.8.0",
     "classnames": "^2.2.6",
     "darkreader": "^4.9.46",
+    "ejson": "^2.2.3",
     "emoji-mart": "^3.0.1",
     "eventemitter2": "~6.4.6",
     "fastdom": "^1.0.10",
@@ -92,6 +93,7 @@
     "wasm-feature-detect": "^1.5.1",
     "webrtc-adapter": "^8.1.1",
     "winston": "^3.7.2",
+    "wolfy87-eventemitter": "^5.2.9",
     "yaml": "^2.2.2"
   },
   "devDependencies": {

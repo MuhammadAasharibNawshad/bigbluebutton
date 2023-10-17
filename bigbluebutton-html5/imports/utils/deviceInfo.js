@@ -9,9 +9,10 @@ const isTablet = BOWSER_RESULTS.platform.type === 'tablet' || (BOWSER_RESULTS.os
 const isMobile = isPhone || isTablet;
 const hasMediaDevices = !!navigator.mediaDevices;
 const osName = BOWSER_RESULTS.os.name;
-const isIos = osName === 'iOS' || (isTablet && osName=="macOS");
+const isIos = osName === 'iOS' || (isTablet && osName === "macOS");
 const isMacos = osName === 'macOS';
 const isIphone = !!(userAgent.match(/iPhone/i));
+const isAndroid = !!(userAgent.match(/Android/i));
 
 const isPortrait = () => window.innerHeight > window.innerWidth;
 
@@ -25,6 +26,7 @@ const deviceInfo = {
   isIos,
   isMacos,
   isIphone,
+  isAndroid,
 };
 
 export default deviceInfo;

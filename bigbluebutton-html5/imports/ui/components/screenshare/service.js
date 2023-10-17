@@ -104,6 +104,16 @@ const screenshareHasAudio = () => {
 }
 
 const screenshareHasEnded = () => {
+  if (window.parent.ReactNativeWebView) {
+    let msgForInitSS = {
+      "method": "endScreenShareAndroid",
+      "params": {        
+          "callerName": Auth.userID,
+      }
+    }
+    window.parent.ReactNativeWebView.postMessage(JSON.stringify(msgForInitSS));
+  }
+
   if (isSharingScreen()) {
     setSharingScreen(false);
   }

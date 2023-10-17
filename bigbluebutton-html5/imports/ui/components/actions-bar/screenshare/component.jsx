@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { defineMessages, injectIntl } from 'react-intl';
 import deviceInfo from '/imports/utils/deviceInfo';
@@ -14,9 +14,15 @@ import {
 } from '/imports/ui/components/screenshare/service';
 import { SCREENSHARING_ERRORS } from '/imports/api/screenshare/client/bridge/errors';
 import Button from '/imports/ui/components/common/button/component';
+import Auth from '/imports/ui/services/auth';
+import Signal from './signal';
+import BridgeService from '/imports/api/screenshare/client/bridge/service';
 
-const { isMobile } = deviceInfo;
+const { isMobile, isAndroid } = deviceInfo;
 const { isSafari, isTabletApp } = browserInfo;
+
+const WS_URL = Meteor.settings.public.kurento.wsUrl;
+var videoSignal = null;
 
 const propTypes = {
   intl: PropTypes.objectOf(Object).isRequired,
@@ -72,6 +78,10 @@ const intlMessages = defineMessages({
     id: 'app.screenshare.screensharePermissionError',
     description: 'Screen sharing failure due to lack of permission',
   },
+  androidSSInfo: {
+    id: 'app.screenshare.androidSSinfo',
+    description: 'Android SS Info',
+  }
 });
 
 const getErrorLocale = (errorCode) => {
@@ -120,6 +130,93 @@ const ScreenshareButton = ({
   screenshareDataSavingSetting,
   mountModal,
 }) => {
+  const [androidSSLoading, setAndroidSSLoading] = useState(false)
+
+  useEffect(() => {
+    if (isAndroid) {
+      window.addEventListener('message', handleGenSDPRequest);
+    }
+
+    return () => {
+      window.removeEventListener('message', handleGenSDPRequest);
+      setAndroidSSLoading(false);
+    };
+
+  }, []);
+
+  const handleGenSDPRequest = (event) => {
+    console.log("HURRAH MSG RECEIVED !!!")
+    try {
+      const message = JSON.parse(event?.data);
+      
+      if(message.key == "StartWsForScreenShare") {
+        if (!videoSignal) {
+          let endpoint = WS_URL + '?sessionToken=' + Auth.sessionToken;
+          videoSignal = new Signal({endpoint});
+        }
+      } else if(message.key == "StopWsForScreenShare") {
+        if (videoSignal) {
+          videoSignal.disconnect();
+          videoSignal = null
+        }
+      } else if (message.key === 'sdpStartMsgForScreenShare') {
+        console.log("Received SDP start msg for SS.")
+        if (message?.startMsg) {
+          let startMsg = message?.startMsg
+          let sdpOffer = decodeURIComponent(startMsg.sdpOffer);
+          message.startMsg.sdpOffer = sdpOffer
+          console.log(sdpOffer);
+         
+          videoSignal.on('signalMessage',(msg)=>{
+              switch (msg.id) {
+                case 'startResponse':
+                  const sdpAnswer = new RTCSessionDescription({ sdp: msg.sdpAnswer, type: 'answer' });
+                  const encodedSDPAnswer = encodeURIComponent(sdpAnswer.sdp);
+                  let sdpAnswerMsg = `{"method": "sdpAnswerForScreenShare", "sdpAnswer":"${encodedSDPAnswer}"}`
+                  console.log(sdpAnswerMsg)
+                  window.parent.ReactNativeWebView.postMessage(sdpAnswerMsg);
+                  break;
+                case 'iceCandidate':
+                  const iceCandidateJSON = JSON.stringify(msg);
+                  // Construct the message object
+                  const messageObject = {
+                    method: "iceCandidateForScreenShare",
+                    iceCandidate: iceCandidateJSON,
+                  };
+                  // Stringify the message object
+                  const messageJSON = JSON.stringify(messageObject);
+                  window.parent.ReactNativeWebView.postMessage(messageJSON);
+                  break;
+                case 'playStart':
+                  console.log(`playstart!!!!!!`);
+                  setTimeout(()=>{
+                    setAndroidSSLoading(false);
+                  },1000)
+                  
+                default:
+                  break;
+              }
+              return;
+            }
+          );
+          videoSignal.send(message.startMsg)
+        }
+      } else if (message.key === 'onIceCandidateForScreenShare') {
+        console.log("Received on iceCandidate Msg for screen share")
+        videoSignal.send(message.iceMsg)
+      } else if (message.key == 'stopMsgForScreenShare') {
+        console.log("Received stop screen share msg");
+        console.log(message.msg);
+        // videoSignal.send(message.msg)
+      } else if (message.key == 'enableScreenShareBtn') {
+        console.log("Enable Screen Share Btn event received.")
+        setAndroidSSLoading(false);
+      }
+    } catch (error) {
+      console.log('Error handling message:', error);
+    }
+  }
+
   // This is the failure callback that will be passed to the /api/screenshare/kurento.js
   // script on the presenter's call
   const handleFailure = (error) => {
@@ -163,7 +260,7 @@ const ScreenshareButton = ({
     ? intlMessages.stopDesktopShareDesc : intlMessages.desktopShareDesc;
 
   const shouldAllowScreensharing = enabled
-    && ( !isMobile || isTabletApp)
+    // && ( !isMobile || isTabletApp)
     && amIPresenter;
 
   const dataTest = isVideoBroadcasting ? 'stopScreenShare' : 'startScreenShare';
@@ -171,7 +268,7 @@ const ScreenshareButton = ({
   return shouldAllowScreensharing
     ? (
       <Button
-        disabled={(!isMeteorConnected && !isVideoBroadcasting)}
+        disabled={(!isMeteorConnected && !isVideoBroadcasting) || androidSSLoading}
         icon={isVideoBroadcasting ? 'desktop' : 'desktop_off'}
         data-test={dataTest}
         label={intl.formatMessage(vLabel)}
@@ -186,7 +283,29 @@ const ScreenshareButton = ({
           : () => {
             if (isSafari && !ScreenshareBridgeService.HAS_DISPLAY_MEDIA) {
               renderScreenshareUnavailableModal();
-            } else {
+            } 
+            else if (isAndroid) {
+              console.log("posting init screen share request.")
+              setAndroidSSLoading(true);
+              let msgForInitSS = {
+                "method": "initializeScreenShareAndroid",
+                "params": {
+                  "callerName": Auth.userID,
+                  "internalMeetingId": Auth.meetingID,
+                  "sessionToken": Auth.sessionToken,
+                  "wsUrl": WS_URL,
+                  "voiceBridge":BridgeService.getConferenceBridge(),
+                  "userName":Auth.fullname,
+                  
+                  "iceServerUrls":[
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:72.52.251.119:3478' }
+                  ]
+                }
+              }
+              window.parent.ReactNativeWebView.postMessage(JSON.stringify(msgForInitSS));
+            } 
+            else {
               shareScreen(amIPresenter, handleFailure);
             }
           }}
